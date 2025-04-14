@@ -18,6 +18,7 @@ let apis = null;
 const MAX_API_WAIT_TIME = 3000;
 const MAX_TIME = 10000;
 
+// API一覧を取得する関数
 async function getapis() {
   try {
     const response = await axios.get('https://raw.githubusercontent.com/Minotaur-ZAOU/test/refs/heads/main/min.json');
@@ -28,6 +29,7 @@ async function getapis() {
   }
 }
 
+// 動画情報を取得する関数
 async function ggvideo(videoId) {
   const startTime = Date.now();
   if (!apis) {
@@ -52,6 +54,7 @@ async function ggvideo(videoId) {
   throw new Error("Could not retrieve video information");
 }
 
+// コメント情報を取得する関数
 async function ggcomments(videoId) {
   const startTime = Date.now();
   if (!apis) {
@@ -72,6 +75,32 @@ async function ggcomments(videoId) {
   throw new Error("Could not retrieve comments");
 }
 
+// チャンネル情報を取得する関数
+async function ggchannel(channelId) {
+  const startTime = Date.now();
+  if (!apis) {
+    await getapis();
+  }
+  for (const instance of apis) {
+    try {
+      const response = await axios.get(`${instance}/api/v1/channels/${channelId}`, { timeout: MAX_API_WAIT_TIME });
+      console.log(`Tried URL: ${instance}/api/v1/channels/${channelId}`);
+      if (response.data) {
+        return response.data;
+      } else {
+        console.error(`Channel data missing at: ${instance}`);
+      }
+    } catch (error) {
+      console.error(`Error at ${instance}: ${error.message}`);
+    }
+    if (Date.now() - startTime >= MAX_TIME) {
+      throw new Error("Connection timed out");
+    }
+  }
+  throw new Error("Could not retrieve channel information");
+}
+
+// 取得済みのAPI一覧を返すルート
 app.get('/api', (req, res) => {
   if (apis) {
     res.json(apis);
@@ -80,11 +109,13 @@ app.get('/api', (req, res) => {
   }
 });
 
+// API一覧を再読み込みするルート
 app.get('/return', async (req, res) => {
   await getapis();
   res.send("APIs refreshed.");
 });
 
+// 動画情報を返すルート
 app.get('/api/video/:id', async (req, res) => {
   const videoId = req.params.id;
   try {
@@ -98,7 +129,7 @@ app.get('/api/video/:id', async (req, res) => {
     const audioUrl = audioStreams
       .filter(stream => stream.container === 'm4a' && stream.audioQuality === 'AUDIO_QUALITY_MEDIUM')
       .map(stream => stream.url)[0];
-      
+
     const templateData = {
       stream_url: streamUrl,
       highstreamUrl: highstreamUrl,
@@ -122,6 +153,7 @@ app.get('/api/video/:id', async (req, res) => {
   }
 });
 
+// コメント情報を返すルート
 app.get('/api/comments/:id', async (req, res) => {
   const videoId = req.params.id;
   try {
@@ -136,6 +168,22 @@ app.get('/api/comments/:id', async (req, res) => {
   }
 });
 
+// チャンネル情報を返す新しいルート
+app.get('/api/channels/:id', async (req, res) => {
+  const channelId = req.params.id;
+  try {
+    const channelInfo = await ggchannel(channelId);
+    res.json(channelInfo);
+  } catch (error) {
+    res.status(500).render('matte', {
+      channelId: channelId,
+      error: 'Failed to retrieve channel information.',
+      details: error.message
+    });
+  }
+});
+
+// サーバーの状態を返すルート
 app.get('/status', (req, res) => {
   const startHR = process.hrtime();
   const currentTime = new Date();
@@ -149,7 +197,7 @@ app.get('/status', (req, res) => {
 
   const cpuUsage = process.cpuUsage();
   const totalCpuMicro = cpuUsage.user + cpuUsage.system;
-  
+
   let responseScore;
   if (responseTimeMs < 5) {
     responseScore = 100;
@@ -217,6 +265,7 @@ app.get('/status', (req, res) => {
   });
 });
 
+// サーバー起動時にAPI一覧を読み込み
 app.listen(PORT, async () => {
   console.log(`${PORT} - Server is running.`);
   await getapis();
